@@ -1,0 +1,13 @@
+3a76e2492f25bb6d44969c40c169120d *DESCRIPTION
+eb0dfd2b461c84a03a31385a49ddf922 *NAMESPACE
+8256307d3e2844112cc72bed4f9b7f53 *R/bhm.R
+526ba7bd877a171893e8ab1a52d105ed *R/bhm_fit.R
+bbbabbd6283f8a861619e707e2cb8b55 *R/bhm_lib.R
+77eeedd47dd663cf58bf62999b93cc0a *R/prolik.R
+c84d68567329ac77192b098af2c2c943 *data/data.rda
+0d5c5a7edc77697af1e36b45d78a2fb1 *inst/CITATION
+bfba3eda8867001cffbfd075fe8d4a3a *man/bhm-package.Rd
+5d22753181624211dc45567a45f9c3c7 *man/bhm.Rd
+bed635491c04690a15ee10610dd15156 *man/control.Rd
+b0cc661060af77834ef1c1a0ba09d0ba *man/data.Rd
+5ee5937f65d07e4435547acb3f9fba1a *man/print.Rd
