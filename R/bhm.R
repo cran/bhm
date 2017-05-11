@@ -56,7 +56,7 @@ bhm.formula = function(formula, family, data=list(...), control=list(...), ...){
       x1 = cbind(x[, 1:3], x[, 2]*x[, 3])
       if(n.col>3) {
         var_names = c(var_names, colnames(x)[4:n.col])
-        x1 = cbind(x1, x[4:n.col, ])
+        x1 = cbind(x1, x[, 4:n.col])
       }
       x = x1
       colnames(x) = var_names
