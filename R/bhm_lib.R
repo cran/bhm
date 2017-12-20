@@ -84,13 +84,14 @@ surv.gendat =  function(n, c0, beta){
   zx = z*x1
   x0 = rep(1, n)
   X = cbind(z, x1, zx)
-  h0 = 1
+  h0 = 0.5
   h = h0*exp(X%*%beta)
   stime = rexp(n, h)               #Failure time.
-  endstudy = runif(n, 2, 4)
+  endstudy = runif(n, 0, 5)
   cstatus = ifelse(stime>endstudy, 0, 1) ##Censored at end of study time.
+  cat('\nCensoring: ', 1-mean(cstatus), '\n')
   stime = ifelse(stime>endstudy, endstudy, stime)
-  dat = cbind(stime, cstatus, z, x)
+  dat = cbind(time=stime, status=cstatus, z=z, x=x)
   return(dat)
 }
 
@@ -119,8 +120,27 @@ x.cdf = function(x){
   n = length(x)
   p = rep(0, n)
   for (i in 1:n) {
-    p[i] = sum(x<x[i])
+    p[i] = sum(x<=x[i])
   }
   p = (p-0.5)/n
   return(p)
 }
+
+## Kernel function
+.K_func = function(w, u, h, kernel = c("gaussian", "epanechnikov", "rectangular", 
+		     "triangular", "biweight", "cosine", "optcosine")) {
+  kernel = match.arg(kernel)
+  x = w-u
+  ax = abs(x)
+  esp = 1e-40
+
+  kh = switch(kernel, gaussian = dnorm(x, sd = h/2),
+    rectangular = ifelse(ax < h, 0.5/h, esp), 
+    triangular = ifelse(ax < h, (1 - ax/h)/h, esp),
+    epanechnikov = ifelse(ax < h, 3/4 * (1 - (ax/h)^2)/h, esp),
+    biweight = ifelse(ax < h, 15/16 * (1 - (ax/h)^2)^2/h, esp),
+    cosine = ifelse(ax < h, (1 + cos(pi * x/h))/(2*h), esp),
+    optcosine = ifelse(ax < h, pi/4 * cos(pi * x/(2*h))/h, esp))
+  return(kh)
+}
+

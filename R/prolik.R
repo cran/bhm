@@ -3,13 +3,19 @@
 prolikFit = function(x, y, family, control) {
   R = control$R
   x = as.matrix(x)
+  var_names = colnames(x)
+  if (family == "surv") var_names = var_names[-1]
+  n = length(x[, 1])
   fit = .profit(x, y, family, control)
   cg = NULL
   cqtl = NULL
   if (R > 0) {
     cg = matrix(0, R, control$c.n)
     for (b in 1:R){
-      ftb = .profit(x, y, family, control)
+      idx = sample(1:n, n, replace = TRUE)
+      x.b = x[idx, ]
+      y.b = y[idx, ]
+      ftb = .profit(x.b, y.b, family, control)
       cg[b, ] = ftb$c.max
     }
   
@@ -18,7 +24,7 @@ prolikFit = function(x, y, family, control) {
     cqtl = apply(cg, 2, quantile, ptl)
   }
   cfit = fit$c.fit
-  pfit = list(cg = cg, c.max = fit$c.max, cqtl=cqtl, coefficients = cfit$coefficients, StdErr = sqrt(diag(vcov(cfit))), c.fit = cfit, var_names = colnames(x))
+  pfit = list(cg = cg, c.max = fit$c.max, cqtl=cqtl, coefficients = cfit$coefficients, StdErr = sqrt(diag(vcov(cfit))), c.fit = cfit, var_names = var_names)
   return(pfit)
 }
 
@@ -52,6 +58,7 @@ prolikFit = function(x, y, family, control) {
       }
     }
   }
+  cfit = thm.fit(x, y, family, cx)
   fit = list(c.max=cx, coefficients=cfit$coefficients, c.fit = cfit)
   return(fit)
 }
