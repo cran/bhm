@@ -4,8 +4,7 @@ pIndex.default = function(x, y, control, ...) {
   #cat("pIndex: Porbability Index method for survival data\n")
  
   if(is.null(control$cut)) control$cut = as.vector(quantile(y[, 1], seq(0.2, 1.0, 0.2)))
-  #.pIndexPic(x1, y, control)
-  #
+
   x = as.matrix(x)
   x.ncol = ncol(x)
   xm = as.factor(x[, 1])
@@ -39,7 +38,8 @@ pIndex.default = function(x, y, control, ...) {
 pIndexControl = function(method = c("Efron", "Elc", "Elw", "Pic"), 
 			 model = c("default", "local", "threshold"), 
 			 ci = c("Bootstrap", "Jackknife"), 
-          weights=NULL, kernel = NULL, h=0.1, w=seq(0.05, 0.95, 0.05), alpha = 0.05, B = 0, pct = 0.5) {
+          weights=NULL, kernel = NULL, h=0.1, w=seq(0.05, 0.95, 0.05), 
+	  alpha = 0.05, B = 0, pct = 0.5, tau = NULL) {
   method = match.arg(method)
   model  = match.arg(model)
   ci = match.arg(ci)
@@ -55,7 +55,7 @@ pIndexControl = function(method = c("Efron", "Elc", "Elw", "Pic"),
 
   if(!is.null(kernel) && B>0) stop("Bootstrap for local estimate coming soon")
   
-  return(list(method = method, model = model, ci=ci, weights=weights, kernel=kernel, h=h, w=w, alpha = alpha, B = B, pct = pct))
+  return(list(method = method, model = model, ci=ci, weights=weights, kernel=kernel, h=h, w=w, alpha = alpha, B = B, pct = pct, tau = tau))
 }
 
 pIndex.formula = function (formula, data = list(...), control = list(...), ...) {
@@ -65,6 +65,10 @@ pIndex.formula = function (formula, data = list(...), control = list(...), ...) 
   y = model.response(mf)
   
   x = as.matrix(x)
+  trt = x[, 1]
+  if(length(unique(trt)) > 2)
+    stop("Either the formula is not in correct order of 'y~trt+biomarker' or the treatment variable has too many groups.")
+
   x.ncol = ncol(x)
   if(x.ncol>2) stop("x shall be a vector or a matrix with 1 or 2 columns.")
 
@@ -151,6 +155,7 @@ plot.pIndex = function(x, ...) {
     abline(h = 0)
   }
 }
+
 pIndexFit = function(x, y, control) {
   x.ncol = ncol(x)
   B = control$B
@@ -294,7 +299,7 @@ pIndexThreshold = function(x, y, control) {
   fit = survfit(y~1, weights=weights, subset=(weights>0))
   cdf = 1-fit$surv
   pdf = diff(c(0, cdf))
-  z = rep(group, length(cdf))
+  z  = rep(group, length(cdf))
   tm = fit$time
   sf = cbind(tm, pdf, z, cdf)
   sf = sf[pdf>0, ]
@@ -317,10 +322,18 @@ pIndexThreshold = function(x, y, control) {
   return(tab)
 }
 
+#mix distribution, to be added.
+
+#pictail=function(y, group, cut) {
+#  weights = 1
+#  sf = .pdfcdf(y, group, weights)
+#  
+#}
+
 # pIndex for piecewise
 .pIndexPic=function(x, y, control){
   cut = control$cut
-  if (is.null(cut)) cut = c(1.5, 2.3, 3, max(y[, 1]))
+  #if (is.null(cut)) cut = c(1.5, 2.3, 3, max(y[, 1]))
   sf1 = .picsf(y[x==1, ], 1, cut) 
   sf2 = .picsf(y[x==0, ], 0, cut)
   r1 = sf1$rate

@@ -11,13 +11,14 @@ Typically only used internally by 'pIndexFit', but may be used to construct a co
                 model = c("default", "local", "threshold"), 
 	        ci = c("Bootstrap", "Jackknife"), weights = NULL, 
 		kernel = NULL, h = 0.1, w  = seq(0.05, 0.95, 0.05), 
-		alpha = 0.05, B = 0, pct = 0.5) 
+		alpha = 0.05, B = 0, pct = 0.5, tau=NULL) 
 }
 
 \arguments{
   \item{method}{choose either `Efron' for Efron method, 
-   'Elc' for conditional empirical likelihood, 
-    or `Elw' for weighted empirical likelihood method. The default value is `Efron'}
+   `Elc' for conditional empirical likelihood, 
+   `Elw' for weighted empirical likelihood method, and 
+   `Pic' for piecewise exponential distribution. The default value is `Efron'}
   \item{model}{`default' for default pIndex model, `local' for kernel method, `threshold' for threshold method}
   \item{ci}{Method to construct confidence interval, `Bootstrap' for Bootstrap method and 
    `Jackknife' for Jackknife method}
@@ -29,6 +30,7 @@ Typically only used internally by 'pIndexFit', but may be used to construct a co
   \item{B}{number of Bootstrap sample}
   \item{alpha}{significance level (e.g. alpha=0.05)}
   \item{pct}{Percentile of threshold (i.e. the cut point), default is 0.5}
+  \item{tau}{maximum time tau to be used for pIndex}
 }
 
 \details{

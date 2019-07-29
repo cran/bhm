@@ -9,7 +9,10 @@ Rresidual Bootstrap Test (RBT) for treatment-biomarker interaction
 }
 \description{
 \{resboot\} is a function to test the existance of treatment-biomarker 
-interaction in biomarker threshold model g(Y) = b0+b1*I(w>c) + b2*z + b3*I(w>c)*z.
+interaction in biomarker threshold model 
+
+g(Y) = b0+b1*I(w>c) + b2*z + b3*I(w>c)*z.
+
 }
 
 \usage{
@@ -60,10 +63,10 @@ Function print(x) can be used to print a summary of resboot results.
 %%  ~Describe the value returned
 resboot returns an object of class inheriting from "resboot". 
 When B > 0, an object of class "resboot" is a list containing at least the following components:
-  \item{theta}{the estimated probability index}  
-  \item{theta.b}{Bootstrap or Jackknife sample of the probability index}
+  \item{theta}{the estimated maximum of likelihood ratio statistics}  
+  \item{theta.b}{Bootstrap sample of theta}
   \item{sd}{standard deviation of theta based on resampling}
-  \item{ci}{(1-alpha) percent confidence interval based on resampling}
+  \item{ci}{(1-alpha) percent confidence interval for theta based on resampling}
 }
 
 \references{
@@ -81,6 +84,7 @@ Bingshu E. Chen (bingshu.chen@queensu.ca)
 %% ~~objects to See Also as \code{\link{help}}, ~~~
 %%\code{\link{prolik}},
 \code{\link{bhm}}
+\code{\link{coxph}}
 }
 \examples{
 ##

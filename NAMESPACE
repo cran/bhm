@@ -2,12 +2,13 @@
 exportPattern("^[^\\.]")
 
 import(coda)
+import(MASS)
 import(survival)
-importFrom("graphics", "abline", "hist", "lines", "plot")
+importFrom("graphics", "abline", "hist", "lines", "plot", "title")
 importFrom("methods", "is")
-importFrom("stats", "aggregate", "cov", "dbeta", "dnorm", "glm", "logLik", 
-           "model.frame",
-           "model.matrix", "model.response", "nlm", "optim", "printCoefmat",
+importFrom("stats", "aggregate", "binomial", "cov", "dbeta", "dnorm", "glm", 
+           "logLik", "model.frame", "model.matrix", "model.response", 
+           "nlm", "optim", "pnorm", "printCoefmat",
            "quantile", "qnorm", "rbinom", "rexp", "rgamma", "rnorm", "runif", 
            "sd", "vcov")
 
@@ -15,13 +16,17 @@ S3method(bhm, default)
 S3method(bhm, formula)
 
 S3method(print, bhm)
+S3method(print, mpl)
 S3method(print, pIndex)
 S3method(print, resboot)
 S3method(print, summary.bhm)
 
+S3method(mpl, formula)
+
 S3method(pIndex, default)
 S3method(pIndex, formula)
 
+S3method(plot, bhm)
 S3method(plot, pIndex)
 S3method(plot, resboot)
 
@@ -29,4 +34,3 @@ S3method(resboot, default)
 S3method(resboot, formula)
 
 S3method(summary, bhm)
-
