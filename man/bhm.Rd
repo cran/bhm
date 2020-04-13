@@ -6,6 +6,7 @@
 \alias{bhmFit}
 \alias{bhmGibbs}
 \alias{prolikFit}
+\alias{summary.bhm}
 \alias{thm.fit}
 \alias{thm.lik}
 \alias{x.cdf}
@@ -42,6 +43,10 @@ bhm(x, ...)
 # to fit a model without the formula
 #
 # Biomarker shall be in the first dependent variable
+# 
+#  To summary a "bhm" boject,
+#
+          \method{summary}{bhm}(object, ...)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -58,7 +63,9 @@ If not found in data, the variables are taken from environment(formula), typical
 
   \item{control}{a list of parameters for controlling the fitting process. See "bhmControl" for details} 
 
-  \item{\dots}{additional arguments to be passed to the low level regression fitting functions (see below).}  
+  \item{object}{object returned from model fit}
+
+  \item{\dots}{additional arguments to be passed to the low level regression fitting functions (see below)}  
 }
 \details{
 'biomarker' is a Biomarker variable. This variable is required and shall be the first dependent variable in the formula.
@@ -109,7 +116,7 @@ The logistic regression part are based on codes wrote by Tian Fang.
 ## Generate a random data set
 n = 300
 b = c(0.5, 1, 1.5)
-data = surv.gendat(n, c0 = 0.40, beta = b)
+data = gendat.surv(n, c0 = 0.40, beta = b)
 age = runif(n, 0, 1)*100
 tm = data[, 1]
 status = data[, 2]
@@ -117,7 +124,7 @@ trt = data[, 3]
 ki67 = data[, 4]
 ## fit a biomarker threshold survival model with one single cut point
 
-fit = bhm(Surv(tm, status)~ki67+trt+age, interaction = TRUE, B=5, R=10)
+# fit = bhm(Surv(tm, status)~ki67+trt+age, interaction = TRUE, B=5, R=10)
 
 
 ## here B=5 and R=10 is used for test run. In general, B > 500 and R > 2000 is
@@ -128,9 +135,11 @@ fit = bhm(Surv(tm, status)~ki67+trt+age, interaction = TRUE, B=5, R=10)
 ##
 ## To print the output, use
 ##
-       print(fit)
+#       print(fit)
 ##
 }
-\keyword{ Biomarker interaction }
-\keyword{ Predictive effect}
-\keyword{ Prognostic effect}
+\keyword{Biomarker interaction}
+\keyword{Indicator threshold models}
+\keyword{Logistic regression}
+\keyword{Predictive effect}
+\keyword{Prognostic effect}
