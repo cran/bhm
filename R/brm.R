@@ -1,4 +1,3 @@
-#####library will be imported in the packages, not needed here.
 #library(MASS)
 #library(ggplot2) # used for the hazard ratio plot
 #library(survival)
@@ -8,7 +7,6 @@
 brm = function(x, ...) {
   UseMethod("brm")
 }
-
 ### the follow function take input like
 ###
 ###       brm(Surv(time, status) ~ w + trt + z1 + z2 + z3)  # need this
@@ -18,75 +16,113 @@ brm = function(x, ...) {
 ###       lambda_0(t) exp(b1*trt + b2*z1 + b3*z2 + b4*z3 +
 ###                        b5*max(w-c, 0) + b6*trt*max(w-c, 0))
 ###
-brm.formula = function(formula, data=list(...),
-                       method = c("gradient", "profile"), epsilon = NULL, ...) {
+brm.formula = function(formula, data=list(...), interaction = TRUE,  
+                       method = c("gradient", "profile", "single"), q = 1, epsilon = NULL, ...) {
   method = match.arg(method)
   mf = model.frame(formula = formula, data = data)
   x = model.matrix(attr(mf, "terms"), data = mf)
   y = model.response(mf)
+  var_names = colnames(x)
+
   if (class(y) == "Surv") {
     family = "surv"
     st = sort(y[, 1], decreasing = TRUE, index.return = TRUE)
     idx = st$ix
     y = y[idx, ]
     x = x[idx, ]
-    ## remove the intercept
-    x = x[, -1]
   }
-  w = x[, 1]
-  
-  ### Use 20 points for first pass search
+  n.col = ncol(x)
+  w = x[, 2]
+
+  # Check for possible wrong order of formula
+  if (length(unique(w)) < 4)
+    stop("Either the formula is not in correct order of 'y~biomarker + trt' or the biomarker is not a continuous variable.")
+
+  #Fit a prognostic model with biomarker term only
+  if(n.col == 2) interaction = FALSE
+  if (q>1) {
+    cat("Since q>1, a signle indelx model will be fitted.\n")
+    method = 'single'
+  }
+   
+  # covariate name for interaction term, sort out proper variable names
+  if(interaction) {
+    int_names = paste(colnames(x)[2], ":", colnames(x)[3], sep="")
+    var_names =  c(var_names, int_names)
+    x = cbind(x, x[, 2]*x[, 3])
+    colnames(x) = var_names
+  }
+  if(family=='surv') var_names=var_names[-1]
+  #print(x[1:5, ])
+
+  ### Use 20 points for first pass searc: seq_c for search grid points
   if(is.null(epsilon)) epsilon = (max(w) - min(w))/20;
-  
-  ### seq_c for search grid points
   seq_c=seq(min(w), max(w), epsilon)
-  
-  fit = brm.default(x, y, method, seq_c, ...)
+
+  control = list(family = family, interaction = interaction, method = method, q = q, seq_c = seq_c)
+  p = length(var_names)
+  if (method == 'single') {
+    fit = .singleFit(x, y, control)
+    for(i in 2:q) var_names[i-1] = paste('eta.', var_names[i], sep='')
+    var_names[q] = 'index'
+    if(interaction) var_names[p] = paste('index:', var_names[q+1], sep='')
+  } else fit = brm.default(x, y, control)
+
   fit$call = match.call()
   fit$formula = formula
   fit$method = method
+  fit$var_names = c(var_names, paste(var_names[q], '.cut', sep=""))
   return(fit)
 }
 
-brm.default = function (x, y, method, seq_c, ...) {
+brm.default = function (x, y, control, ...) {
   x = as.matrix(x)
-  method = method
-  
+  method = control$method
+  seq_c = control$seq_c
+  p = ncol(x)
+
+  if(control$family=="surv") x=x[, -1]
+  if(p == 2) x = as.matrix(x, ncol = 1)
+
   ### first pass search for initial value
-  fit0 = .reluProFit(x, y, seq_c)
-  theta0 = c(fit0$beta, fit0$c.max)
+  fit0 = .reluProFit(x, y, control)
+  control$theta0 = c(fit0$coefficients, fit0$c.max)
   
   if (method == "gradient") 
-    fit = .reluGradFit(x, y, theta0)
+    fit = .reluGradFit(x, y, control)
   else {
     lgc = as.matrix(fit0$log_c)
     
     ### second pass: refined search around possible MLE
-    c2 = lgc[lgc[, 2] > (fit0$logLik - 3.84), 1]
+    c2 = lgc[lgc[, 2] > (fit0$loglik - 3.84), 1]
     
     epsilon = seq_c[2]-seq_c[1]
     epsilon2 = (max(c2) - min(c2) + epsilon)/60
-    seq_c2 = seq(min(c2)- 0.5*epsilon, max(c2) + 0.5*epsilon, epsilon2)
-    fit = .reluProFit(x, y, seq_c2)
+    control$seq_c = seq(min(c2)- 0.5*epsilon, max(c2) + 0.5*epsilon, epsilon2)
+    fit = .reluProFit(x, y, control)
     tmp = rbind(lgc, fit$log_c)
     fit$log_c = tmp[order(tmp[, 1]), ]
   }
   
   ### Find s.e
+  #numerical method in specified
+  I_numerical = .reluInfo(fit$theta, x, y)
+  I_numerical_inv = ginv(I_numerical, tol = sqrt(.Machine$double.eps))
+
   grdInfo = .reluGradient(fit$theta, x, y, info = TRUE)
   pi_theta = grdInfo$pi_theta
   
   #score in specified model
   sV = ginv(pi_theta) 
   
-  #numerical method in specified
-  I_numerical = .reluInfo(fit$theta, x, y)
-  I_numerical_inv = ginv(I_numerical, tol = sqrt(.Machine$double.eps))
-  
   #robust var by second derivative in misspecified
   second = grdInfo$second
   robust_second = solve(second)%*%pi_theta%*%solve(second)
-  
+
+  names(fit$coefficients) = colnames(x)
+  fit$var = sV
+  fit$linear.predictors = grdInfo$lp
+  fit$first = grdInfo$U
   fit$sd.numerical = sqrt(diag(I_numerical_inv))
   fit$sd.score = sqrt(diag(sV))         
   fit$sd.robust = sqrt(diag(robust_second))     
@@ -95,50 +131,77 @@ brm.default = function (x, y, method, seq_c, ...) {
   return(fit)
 }
 
-########### help functions ###########################
-.evalLP = function(theta, x) {
-  ### this code is re-written to handle model of
-  ###
-  ###            Surv(time, status) ~ biomarker + trt + x2 + x3 + ...  # need this
-  ###
-  ### input 'x' is a nxp matrix with 2 or more columns:
-  ### x1 = treatment z,
-  ### x2, ..., x_{p-1} are other covariates,
-  ### xp = biomarker variable w.
-  p = length(x[1, ])
-  z = x[, 2:p]  # baseline including trt
-  x1 = x[, 2]   # trt
-  w = x[, 1]    # biomarker
-  
-  ### beta = theta1, ... theta[p+1], cut point = theta[p+2]
-  beta = theta[1:(p+1)]
-  cx   = theta[p+2]
-  
-  phi = ifelse(w >= cx, w-cx, 0)
-  eta = ifelse(w >= cx, -(beta[1]+beta[p+1]*x1), 0)
-  
-  ### output X is a n x (p+1) matrix: [x1, ... x_{p-1}, phi, phi*x1]
-  X = cbind(phi, z, phi*x1)
-  
-  ### Linear predict vector lp
-  lp = (X%*%beta)[, 1]
-  return(list(X = X, lp = lp, eta = eta, w = w, cx = cx, phi = phi))
+########### Single index model #######################
+.singleFit = function(x, y, control) {
+  x = as.matrix(x)
+  p = ncol(x)
+  # fix the first index coef = 1 for model identifibility
+  q = control$q-1 
+  if(p<q+1) stop("Columns of x shall greater than q+1")
+
+  w = x[, 2:(q+2)]
+  w = apply(w, 2, function(x) {(x-mean(x))/sd(x)})
+  # the first column of z (intercept) will be replaced by the single index
+  z = x[, c(1, (q+3):p)]
+  theta = rep(0, p)
+  #J = .singleLik(theta, w, z, y, q)
+  jmax = nlminb(theta, .singleLik, .singleGradient, w = w, z = z, y = y, q = q)
+  theta = jmax$par
+  beta = theta[1:(p-1)] 
+  c.max = theta[p]
+
+  a = c(1, theta[1:q])
+  z[, 1] = w%*%a
+  theta.s = theta[-(1:q)]
+  ev = .evalLP(theta.s, z)
+
+  #s1 = .singleGradient(theta, w, z, y, q) # check if the score function is correct.
+  #s2 = .singleGradient2(theta, w, z, y, q)
+  #print(rbind(s1, s2))
+  info = .singleInfo(theta, w, z, y, q)
+  #print(info)
+  var = ginv(info)
+  #print(var)
+  sd.score = sqrt(diag(var))
+
+  fit = list(coefficients = beta, var=var, sd.score=sd.score, theta = theta, 
+	     iter = jmax$iterations, c.max = c.max, loglik = -jmax$objective, 
+	     linear.predictors = ev$lp, y = y, index = z[, 1])
+  class(fit) = 'brm'
+  return(fit)
 }
 
-
-### Numerical method for information matrix
-.reluInfo = function(theta, x, y){
+########### help functions ###########################
+.evalLP = function(theta, x) {
+  ###  Surv(time, status) ~ biomarker + trt + x2 + x3 + ...  # need this
+  ### input 'x' is a nxp matrix with 2 or more columns:
   p = length(theta)
-  h = 0.0001
-  Info = matrix(0, p, p)
-  for(i in 1:p) {
-    theta1 = theta
-    theta2 = theta
-    theta1[i] = theta[i] - h
-    theta2[i] = theta[i] + h
-    Info[i, ] = .5*(.reluGradient(theta2, x, y) - .reluGradient(theta1, x, y))/h  #should be theta1-theta2
+  pb= (p-1)
+  w = x[, 1]    # biomarker
+  
+  cx = theta[p]
+  ### beta = theta1, ... theta[p-1], cut point = theta[p]
+  beta = theta[1:pb]
+  phi = ifelse(w >= cx, w-cx, 0)
+  x[, 1] = phi
+  eta = ifelse(w >= cx, -beta[1], 0)
+  if (length(grep(":", colnames(x)[pb])) == 1) {
+    trt = x[, 2]   # trt
+    x[, pb] = trt*phi
+    eta = ifelse(w >= cx, -(beta[1]+beta[pb]*trt), 0)
   }
-  return(Info)
+  # print(head(X))
+  ### output X is a n x (bp) matrix: [phi, trt,... x_{pb-1}, phi*trt]
+  lp = (x%*%beta)[, 1]
+  return(list(X = x, lp = lp, eta = eta, w = w, cx = cx, phi = phi))
+}
+
+###################################################
+.singleLik=function(theta, w, z, y, q) {
+  a = c(1, theta[1:q])
+  z[, 1] = w%*%a
+  theta.s = theta[-(1:q)]
+  J = .reluLglik(theta.s, z, y)
 }
 
 ###################################################
@@ -160,9 +223,7 @@ brm.default = function (x, y, method, seq_c, ...) {
   elp = exp(lp)
   status = y[, 2]
   
-  elp = exp(lp)
-  
-  Xa = cbind(ev$X, ev$eta)
+  Xa = cbind(ev$X, c.max = ev$eta)
   s0 = cumsum(elp)
   s1 = apply(Xa*elp, 2, cumsum)
   U = Xa - s1/s0  ### U is a n*p matrix, each row ui
@@ -170,10 +231,13 @@ brm.default = function (x, y, method, seq_c, ...) {
   
   n = nrow(Xa)
   p = ncol(Xa)
-  z2 = cbind(rep(1,length(ev$X[, 1])), ev$X[, 1])
+  if (p>2) interaction = (length(grep(":", colnames(x)[p-1])) == 1)
+  else interaction = FALSE
+  # trt = X[, 2] and z2 = [1, trt]
+  if (interaction) z2 = cbind(rep(1, n), ev$X[, 2]) else z2=as.matrix(rep(1, n), nrow = n)
   I = ifelse(ev$w >= ev$cx, 1, 0)
   z2_I = z2*I
-  
+
   if(info) {
     mtm = function(m) {return(m%*%t(m))}
     ### code for information matrix here
@@ -200,29 +264,31 @@ brm.default = function (x, y, method, seq_c, ...) {
     I_theta = -colSums(status*(s2/c(s0)-s1_2/c(s0)^2), dims = 1)
     
     #for v_2rc
-    s1rc = apply(z2_I*elp, 2, cumsum)
-    V_2rc = status%*%(s1rc/(s0)-z2_I)
+    s1rc = apply(-z2_I*elp, 2, cumsum)
+    V_2rc = status%*%(-z2_I - s1rc/(s0))
     
     #for v_2cc
     den=density(ev$w)
     
     pt1=which(den$x>=theta[p])[1]
     f.w.c = 0.5*(den$y[pt1]+den$y[pt1-1])
-    
-    s1cc = apply(z2%*%theta[(p-2):(p-1)]*elp, 2, cumsum)
-    V_2cc = f.w.c*(status%*%(z2%*%theta[(p-2):(p-1)]-s1cc/(s0)))
+
+    ### beta[1] + beta[p-1]*trt 
+    if(interaction) z2b = z2%*%theta[c(1, (p-1))] else z2b = z2*theta[1]
+    s1cc = apply(z2b*elp, 2, cumsum)
+    V_2cc = f.w.c*(status%*%(z2b-s1cc/(s0)))
     
     #file V.2
     V.2=matrix(0,nrow=p,ncol=p)
     V.2[p, p]= V_2cc
-    V.2[p,p-2] = V_2rc[1]
-    V.2[p,p-1] = V_2rc[2]
-    V.2[p-2,p] = V_2rc[1]
-    V.2[p-1,p] = V_2rc[2]
+    V.2[p, 1] = V_2rc[1]
+    if(interaction) V.2[p,p-1] = V_2rc[2]
+    V.2[1, p] = V_2rc[1]
+    if(interaction) V.2[p-1,p] = V_2rc[2]
     
     second = I_theta + V.2
     
-    upi = list(U = grd, pi_theta = pi_theta, I_theta = I_theta, second = second)
+    upi = list(U = grd, pi_theta = pi_theta, I_theta = I_theta, second = second, lp = lp)
     return(upi)
   } else {
     return(grd)
@@ -230,29 +296,29 @@ brm.default = function (x, y, method, seq_c, ...) {
 }
 
 ########## main fit functions ###########
-.reluProFit = function(x, y, seq_c) {
+.reluProFit = function(x, y, control) {
   p = length(x[1, ])
   ### p main effect, 1 interaction, 1 threshold
-  theta0 = rep(0, p+2)
-  c1 = seq_c
+  theta0 = rep(0, p+1)
+  c1 = control$seq_c
   
   nc = length(c1)
   log_c = matrix(NaN, nc, 2)
   log_c[, 1] = c1
   
-  lgLik = -1e10
+  logLik = -1e10
   for (j in 1:nc) {
-    theta0[p+2] = c1[j]
+    theta0[p+1] = c1[j]
     X = .evalLP(theta0, x)$X
     
     ### Make sure matrix X is not singular with too many no effective biomarker
-    if(mean(X[, p+1]>0) < 0.05) next
+    if(mean(X[, 1]>0) < 0.05) next
     fit = coxph(y~X)
     log_c[j, 2]= fit$loglik[2]
     
-    if (log_c[j, 2] > lgLik) {
+    if (log_c[j, 2] > logLik) {
       beta = fit$coefficients
-      lgLik = log_c[j, 2]
+      logLik = log_c[j, 2]
       c.max = c1[j]
     }
   }
@@ -267,14 +333,12 @@ brm.default = function (x, y, method, seq_c, ...) {
   time = y[, 1]
   status = y[, 2]
   
-  int_names = paste(colnames(x)[1], ":", colnames(x)[p], sep="")
-  var_names = c(colnames(x)[1:p], int_names, "c.max")
-  
-  return(list(beta = beta, c.max = c.max, theta = theta, logLik = lgLik,
-              x = x, y = y, time = time, status = status, log_c = log_c, var_names = var_names))
+  return(list(coefficients = beta, c.max = c.max, theta = theta, loglik = logLik,
+           x = x, y = y, time = time, status = status, log_c = log_c))
 }
 
-.reluGradFit = function(x, y, theta0) {
+.reluGradFit = function(x, y, control) {
+  theta0 = control$theta0
   lmax = nlminb(theta0, .reluLglik, .reluGradient, x = x, y = y,
                 lower = c(rep(-10, 4)), upper = c(rep(10, 4)))
   theta = lmax$par
@@ -282,18 +346,11 @@ brm.default = function (x, y, method, seq_c, ...) {
   beta = theta[1:(p-1)]
   c.max = theta[p]
   logLik = -lmax$objective
-  x = x
-  y = y
   
-  m = length(x[1, ])
-  time = y[, 1]
-  status = y[, 2]
-  int_names = paste(colnames(x)[1], ":", colnames(x)[m], sep="")
-  var_names = c(colnames(x)[1:m], int_names, "c.max")
+  #status = y[, 2]
   ev = .evalLP(theta, x)
-  lp = ev$lp
-  return(list(beta = beta, c.max = c.max, theta = theta, logLik = logLik,
-              lp = lp, x = x, y = y, time = time, status = status, var_names = var_names))
+  return(list(coefficients = beta, c.max = c.max, theta = theta, loglik = logLik,
+           y = y, index = x[, 1], iter = lmax$iterations))
 }
 
 print.brm = function(x, digits = 4, ...) {
@@ -303,7 +360,7 @@ print.brm = function(x, digits = 4, ...) {
   cat("\n")
   
   cat('Coefficients and threshold parameter\n')
-  bc = cbind(unname(t(x$beta)), x$c.max)
+  bc = cbind(unname(t(x$coefficients)), x$c.max)
   colnames(bc) = t(x$var_names) 
   print(bc, digits=digits)
 }
@@ -311,15 +368,15 @@ print.brm = function(x, digits = 4, ...) {
 summary.brm = function(object, alpha = 0.05,...){
   zscore = qnorm(1-alpha/2)
   sd = object$sd.score
-  theta = t(cbind(unname(t(object$beta)), object$c.max))
+  theta = t(cbind(unname(t(object$coefficients)), object$c.max))
   
   qtl = cbind(theta-zscore*sd, theta+zscore*sd)
   
   TAB1 = cbind(theta, sd, theta/sd, qtl[,1], qtl[,2], 2*pnorm(-abs(theta/sd)))
-  colnames(TAB1) = c("Estimate", "Std.Err", "Z value", "95% CI(lower)", "95% CI(upper)", "Pr(>z)")
+  colnames(TAB1) = c("Estimate", "Std.Err", "Z value", "95% CI(Low)", "95% CI(Up)", "Pr(>z)")
   rownames(TAB1) = object$var_names
   
-  lp = -(object$lp)
+  lp = -(object$linear.predictors)
   cidx = concordance(object$y~lp) 
   results = list(call=object$call,TAB1=TAB1, cidx = cidx)
   class(results) = "summary.brm"
@@ -336,24 +393,22 @@ print.summary.brm = function(x,...){
   print(x$cidx)
 }
 
-residuals.brm = function(object, type="Margingale", ...) {
+residuals.brm = function(object, type=c("Martingale", "Cox"), ...) {
+  type = match.arg(type)
   ### code for martingle residuals
   x = object
-  p = length(x$x[1, ])
-  p1 = p-1
-  x1 = x$x[, 1]
-  z = x$x[, 1:p1]
-  w = x$x[, p]
-  cx = x$c.max
-  beta = x$beta
+  #p = length(x$x[1, ])
+  #p1 = p-1
+  #x1 = x$x[, 1]
+  #z = x$x[, 1:p1]
+  w = x$index
   
-  phi = ifelse(w >= cx, w-cx, 0)
-  
-  X = cbind(z, phi, phi*x1)
-  s0 = cumsum(exp(X%*%beta))
+  status = x$y[, 2]
+  elp = exp(x$linear.predictors)
+  s0 = cumsum(elp)
   H0 = rev(cumsum(rev(x$status/s0))) # cumulative baseline hazard
-  H = H0*exp(X%*%beta)               # cumulative hazard
-  r = x$status-H                     # martingale residuals
+  H = H0*elp                         # cumulative hazard
+  r = status-H                       # martingale residuals
   
   if (type=="Cox"){
     sv = survfit(Surv(H, x$status)~1)
@@ -426,6 +481,70 @@ plot.brm = function(x, type=c("HR"), ...){
   print(p)
 }
 
+### Numerical method for information matrix
+.reluInfo = function(theta, x, y){
+  p = length(theta)
+  h = 0.0001
+  Info = matrix(0, p, p)
+  for(i in 1:p) {
+    theta1 = theta
+    theta2 = theta
+    theta1[i] = theta[i] - h
+    theta2[i] = theta[i] + h
+    Info[i, ] = .5*(.reluGradient(theta2, x, y) - .reluGradient(theta1, x, y))/h
+  }
+  return(Info)
+}
+
+.singleGradient = function(theta, w, z, y, q){
+  a = c(1, theta[1:q])
+  z[, 1] = w%*%a
+  theta.s = theta[-(1:q)]
+  ev = .evalLP(theta.s, z)
+  lp = ev$lp
+  elp = exp(lp)
+  status = y[, 2]
+
+  eta = ev$eta
+  w1 = w[, -1]
+  Xa = cbind(w = -w1*eta, ev$X, c.max = eta)
+  s0 = cumsum(elp)
+  s1 = apply(Xa*elp, 2, cumsum)
+  U = Xa - s1/s0  ### U is a n*p matrix, each row ui
+  grd = -colSums(status * U)
+}
+
+.singleGradient2 = function(theta, w, z, y, q) {
+  p = length(theta) 
+  h = 0.00001
+  U = rep(0, p)
+  for(i in 1:p) {
+    theta1 = theta
+    theta2 = theta
+    theta1[i] = theta[i] - h
+    theta2[i] = theta[i] + h
+    U[i] = 0.5*(.singleLik(theta2, w, z, y, q) - .singleLik(theta1, w, z, y, q))/h
+  }
+  U
+}
+
+.singleInfo = function(theta, w, z, y, q){
+  p = length(theta)
+  h = 0.0001
+
+  Info = matrix(0, p, p)
+  for(i in 1:p) {
+    theta1 = theta
+    theta2 = theta
+    theta1[i] = theta[i] - h
+    theta2[i] = theta[i] + h
+    Info[i, ] = (.singleGradient(theta2, w, z, y, q) - .singleGradient(theta1, w, z, y, q))/h 
+  }
+  Info = (Info+t(Info))*0.25
+
+  return(Info)
+}
+
 ###### Generate survival data ################
 gendat.surv =  function(n, c0, beta, type = c("brm", "bhm")){
   type = match.arg(type)
@@ -437,7 +556,7 @@ gendat.surv =  function(n, c0, beta, type = c("brm", "bhm")){
   
   z = rbinom(n,1,0.5)  ####used binomial to determine 0 or 1####
   zx = z*x1
-  X = cbind(z, x1, zx)
+  X = cbind(x1, z, zx)
   h0 = .5
   h = h0*exp(X%*%beta)
   

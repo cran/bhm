@@ -79,6 +79,7 @@ mpl.formula = function(formula, formula.glm, formula.cluster, data, weights=NULL
 }
 
 .updateMPL = function(y, s, Z, W, c_matrix, U, sigma, control) {
+  weights = control$weights
   var_u = sigma[1]
   var_v = sigma[2]
   cov_uv= sigma[3]
@@ -91,13 +92,15 @@ mpl.formula = function(formula, formula.glm, formula.cluster, data, weights=NULL
   U_p = c_matrix%*%U
   ##For given U, estimate beta, gamma with survival and logistic function
   ##baseline hazard for each observation was obtained by basehaz
-  logi = glm(y ~ Z1 + offset(U_p[, 1]),family=binomial)
+  if (is.null(weights)) logi = glm(y ~ Z1 + offset(U_p[, 1]),family=binomial)
+  else logi = glm(y ~ Z1 + offset(U_p[, 1]), family=quasibinomial, weights = weights)
+
   beta<-as.numeric(logi$coefficients) 
   se.beta<-as.numeric(summary(logi)$coefficients[,2])
   #cat('\n length s', length(s[, 1]))
   #cat('\n length W', length(W[, 1]))
   #cat('\n')
-  ph = coxph(s~W+offset(U_p[, 2]))
+  ph = coxph(s~W+offset(U_p[, 2]), weights = weights)
   gamma<-as.numeric(ph$coefficients)
   se.gamma<-as.numeric(summary(ph)$coefficients[,3])
   
@@ -266,6 +269,8 @@ mplFit = function (y, s, Z, W, centre, control) {
 
 .mplJK=function (y, s, Z, W, centre, theta, control) {
   control$theta0 = theta
+  weight0 = control$weights  # origial weights, needed in Jacknife
+
   n = length(centre)
   ncentre = length(unique(centre))
 
@@ -285,6 +290,8 @@ mplFit = function (y, s, Z, W, centre, control) {
     s.jk = subset(s, idx)
     Z.jk = subset(Z, idx)
     W.jk = subset(W, idx)
+    ### Use new weights
+    control$weights = subset(weight0, idx)
 
     ###convert all centres into 1 to ncentre ID scale
     centre.jk = as.factor(as.numeric(as.factor(centre[idx])))
