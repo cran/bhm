@@ -17,6 +17,7 @@ llm.default = function(x, y, epsilon, ...) {
     xr = ifelse(x2>ci, (x2-ci), 0)
     X = cbind(x, xr)
     lmf = lm.fit(X, y)
+    fit = lmf
     rsm1 = sum(lmf$residuals^2)
     #print(rsm1)
     if(rsm1 < rsm) {
@@ -39,6 +40,9 @@ llm.formula = function(formula, data=list(...), epsilon = 0.025,...) {
   mt <- attr(mf, "terms")
   x = model.matrix(attr(mf, "terms"), data = mf)
   y = model.response(mf)
+  yna = is.na(y)
+  y   = y[!yna]
+  x   = x[!yna, ]
   fit = llm.default(x, y, epsilon)
   fit$terms = mt
   fit$call = match.call()
@@ -53,7 +57,7 @@ print.llm = function(x, ...) {
   cat("L-shape linear model:\n")
   cat("Cut off value = ", c0, '\n')
   cat("beta = ", beta, '\n')
-  cat("Model 1: when x < ", c0, "\n")
+  cat("Model 1: when x < or =  ", c0, "\n")
   cat("y = ", beta[1])
   if(beta[2]>0) cat ('+') else cat('-')
   cat(abs(beta[2]), '* x')
@@ -61,7 +65,7 @@ print.llm = function(x, ...) {
   b20 = beta[1]-beta[p]*c0
   b21 = beta[2]+beta[p]
   
-  cat("\nModel 2: when x >= ", c0, "\n")
+  cat("\nModel 2: when x > ", c0, "\n")
   cat("y = ", b20)
   if(b21>0) cat ('+') else cat('-')
   cat(abs(b21), '* x')
